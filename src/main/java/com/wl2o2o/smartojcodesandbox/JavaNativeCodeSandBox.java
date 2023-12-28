@@ -10,6 +10,8 @@ import com.wl2o2o.smartojcodesandbox.model.ExecuteCodeRequest;
 import com.wl2o2o.smartojcodesandbox.model.ExecuteCodeResponse;
 import com.wl2o2o.smartojcodesandbox.model.ExecuteMessage;
 import com.wl2o2o.smartojcodesandbox.model.JudgeInfo;
+import com.wl2o2o.smartojcodesandbox.security.DefaultSecurityManager;
+import com.wl2o2o.smartojcodesandbox.security.MySecurityManager;
 import com.wl2o2o.smartojcodesandbox.utils.ProcessUtils;
 
 import java.io.File;
@@ -32,6 +34,10 @@ public class JavaNativeCodeSandBox implements CodeSandBox {
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
 
     private static final Long TIME_OUT = 5000L;
+
+    private static final String SECURITY_MANAGER_PATH = "E:\\Exercise\\project\\smartoj-code-sandbox\\src\\main\\resources\\security";
+
+    private static final String SECURITY_MANAGER_CLASS_NAME = "MySecurityManager";
 
     private static final List<String> blacklist = Arrays.asList("File", "exec");
 
@@ -68,6 +74,9 @@ public class JavaNativeCodeSandBox implements CodeSandBox {
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
+        // 实际上，我们只需要对如下子程序进行安全管理，所以采用下行命令进行管理
+        // String runCmd = String.format("java -Xmx256m -Dfile.encoding=utf8 -cp %s;%s -Djava.security.manager=%s Main %s", userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, input);
+        // System.setSecurityManager(new MySecurityManager());
 
         FoundWord foundWord = WORD_TREE.matchWord(code);
         if (foundWord != null) {
@@ -102,7 +111,7 @@ public class JavaNativeCodeSandBox implements CodeSandBox {
         // 3. 执行代码，得到输出结果
         ArrayList<ExecuteMessage> executeMessageList = new ArrayList<>();
         for (String input : inputList) {
-            String runCmd = String.format("java -Xmx256m -Dfile.encoding=utf8 -cp %s Main %s", userCodeParentPath, input);
+            String runCmd = String.format("java -Xmx256m -Dfile.encoding=utf8 -cp %s;%s -Djava.security.manager=%s Main %s", userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, input);
             try {
                 Process runProcess = Runtime.getRuntime().exec(runCmd);
                 // 超时控制
