@@ -16,5 +16,5 @@ public interface CodeSandBox {
      * @param executeCodeRequest
      * @return
      */
-    ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest);
+    ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) throws InterruptedException;
 }
