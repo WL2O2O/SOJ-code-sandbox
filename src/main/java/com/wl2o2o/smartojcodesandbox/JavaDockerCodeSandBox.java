@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author <a href="https://github.com/wl2o2o">程序员CSGUIDER</a>
@@ -125,11 +126,18 @@ public class JavaDockerCodeSandBox implements CodeSandBox {
 
         // 创建容器,上传 class 文件
         HostConfig hostConfig = new HostConfig();
-        hostConfig.withMemory(100 * 1000 * 1000L);
+        hostConfig.withMemory(100 * 1000 * 1000L); // 限制内存
+        hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
+        // 使用Linux自带的安全管理措施，进一步进行权限限制
+        // hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
         hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
         CreateContainerResponse createContainerResponse = dockerClient.createContainerCmd(image)
                 .withHostConfig(hostConfig)
+                // 禁掉网络
+                .withNetworkDisabled(true)
+                // 禁止写文件到根目录
+                .withReadonlyRootfs(true)
                 .withAttachStdin(true)
                 .withAttachStderr(true)
                 .withAttachStdout(true)
@@ -168,8 +176,16 @@ public class JavaDockerCodeSandBox implements CodeSandBox {
             final String[] message = {null};
             final String[] errorMessage = {null};
             long time = 0L;
+            final boolean[] timeOut = {true};
             String execId = execCreateCmdResponse.getId();
             ExecStartResultCallback execStartResultCallback = new ExecStartResultCallback() {
+                @Override
+                public void onComplete() {
+                    // 如果执行完成，设置为未超时
+                    timeOut[0] = false;
+                    super.onComplete();
+                }
+
                 @Override
                 public void onNext(Frame frame) {
                     StreamType streamType = frame.getStreamType();
@@ -218,19 +234,13 @@ public class JavaDockerCodeSandBox implements CodeSandBox {
             statsCmd.exec(statisticsResultCallback);
             try {
                 stopWatch.start();
-                dockerClient.execStartCmd(execId).exec(execStartResultCallback).awaitCompletion();
+                dockerClient.execStartCmd(execId)
+                        .exec(execStartResultCallback)
+                        // 一行代码直接实现了超时控制，但是都会继续执行后续代码
+                        .awaitCompletion(TIME_OUT, TimeUnit.MICROSECONDS);
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();
                 statsCmd.close();
-                // TODO: 可能需要进行超时控制
-//                new Thread(() -> {
-//                    try {
-//                        Thread.sleep(TIME_OUT);
-//                        System.out.println("超时了，中断！");
-//                    } catch (InterruptedException e) {
-//                        throw new RuntimeException(e);
-//                    }
-//                }).start();
             } catch (InterruptedException e) {
                 System.out.println("程序执行异常");
                 throw new RuntimeException(e);
