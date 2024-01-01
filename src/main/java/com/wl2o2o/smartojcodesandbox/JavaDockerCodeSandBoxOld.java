@@ -18,8 +18,6 @@ import com.wl2o2o.smartojcodesandbox.model.ExecuteCodeResponse;
 import com.wl2o2o.smartojcodesandbox.model.ExecuteMessage;
 import com.wl2o2o.smartojcodesandbox.model.JudgeInfo;
 import com.wl2o2o.smartojcodesandbox.utils.ProcessUtils;
-import org.apache.logging.log4j.message.StringFormattedMessage;
-import org.springframework.stereotype.Component;
 
 import java.io.Closeable;
 import java.io.File;
@@ -31,20 +29,24 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Java 代码沙箱模板方法的实现
+ *
  * @Author <a href="https://github.com/wl2o2o">程序员CSGUIDER</a>
  * @From <a href="https://wl2o2o.github.io">CSGUIDER博客</a>
  * @CreateTime 2023/12/25
  */
-@Component
-public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplete {
+
+public class JavaDockerCodeSandBoxOld implements CodeSandBox {
+
+    private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
+
+    private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
 
     private static final Long TIME_OUT = 5000L;
 
     private static final Boolean FIRST_INIT = true;
 
     public static void main(String[] args) throws InterruptedException {
-        JavaDockerCodeSandBox javaNativeCodeSandBox = new JavaDockerCodeSandBox();
+        JavaDockerCodeSandBoxOld javaNativeCodeSandBox = new JavaDockerCodeSandBoxOld();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         executeCodeRequest.setInputList(Arrays.asList("1 2", "1 3"));
          String code = ResourceUtil.readStr("testCode/simpleComputeArgs/Main.java", StandardCharsets.UTF_8);
@@ -62,15 +64,38 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplete {
 
     }
 
-    /**
-     * 3. 创建容器，把文件复制到容器内
-     * @param userCodeFile
-     * @param inputList
-     * @return
-     */
     @Override
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
-        String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
+    public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        List<String> inputList = executeCodeRequest.getInputList();
+        String code = executeCodeRequest.getCode();
+        String language = executeCodeRequest.getLanguage();
+
+        // 1. 把用户文件保存为文件
+        String userDir = System.getProperty("user.dir");
+        String globalPathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
+
+        // 判断目录是否存在
+        if (!FileUtil.exist(globalPathName)) {
+            FileUtil.mkdir(globalPathName);
+        }
+
+        // 把用户的代码隔离存放
+        String userCodeParentPath = globalPathName + File.separator + UUID.randomUUID();
+        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME;
+        File userCodeFile = FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
+
+
+        // 2. 编译代码，得到 class 文件
+        String compileCmd = String.format("javac -encoding utf8 %s", userCodeFile.getAbsolutePath());
+        try {
+            Process compileProcess = Runtime.getRuntime().exec(compileCmd);
+            ExecuteMessage executeCompileMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
+            System.out.println(executeCompileMessage);
+        } catch (IOException e) {
+            return getErrorResponce(e);
+        }
+
+        // 3. 创建容器，把文件复制到容器内
         ArrayList<ExecuteMessage> executeMessageList = new ArrayList<>();
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
         // 拉取镜像
@@ -92,12 +117,12 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplete {
             }
         }
 
-        // // 列举镜像
-        // ListImagesCmd listImagesCmd = dockerClient.listImagesCmd();
-        // List<Image> imageList = listImagesCmd.exec();
-        // for (Image img : imageList) {
-        //     System.out.println("镜像id: " + img.getId());
-        // }
+       // // 列举镜像
+       // ListImagesCmd listImagesCmd = dockerClient.listImagesCmd();
+       // List<Image> imageList = listImagesCmd.exec();
+       // for (Image img : imageList) {
+       //     System.out.println("镜像id: " + img.getId());
+       // }
 
         // 创建容器,上传 class 文件
         HostConfig hostConfig = new HostConfig();
@@ -226,6 +251,60 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplete {
             executeMessage.setMemory(maxMemory[0]);
             executeMessageList.add(executeMessage);
         }
-        return executeMessageList;
+
+        // 4. 从控制台，收集整理输出结果
+        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        List<String> outpuList = new ArrayList<>();
+        long maxTime = 0;
+        for (ExecuteMessage executeMessage : executeMessageList) {
+            String errorMessage = executeMessage.getErrorMessage();
+            // 如果有错误输出
+            if (StrUtil.isNotBlank(errorMessage)) {
+                executeCodeResponse.setMessage(errorMessage);
+                // 定义一个枚举值   执行中存在错误
+                executeCodeResponse.setStatus(3);
+                break;
+            }
+            Long time = executeMessage.getTime();
+            if (time != null) {
+                maxTime = Math.max(time, maxTime);
+            }
+            outpuList.add(executeMessage.getMessgae());
+        }
+        if (outpuList.size() == executeMessageList.size()) {
+            // 程序运行正常
+            executeCodeResponse.setStatus(1);
+        }
+        executeCodeResponse.setOutputList(outpuList);
+        JudgeInfo judgeInfo = new JudgeInfo();
+        // 判题模块负责  judgeInfo.setMessage();
+        judgeInfo.setTime(maxTime);
+        // 要借助第三方库才可以实现
+        // judgeInfo.setMemory();
+        executeCodeResponse.setJudgeInfo(judgeInfo);
+
+        // 5. 文件清理
+        if (userCodeFile.getParentFile() != null) {
+            boolean del = FileUtil.del(userCodeParentPath);
+            System.out.println("删除" + (del? "成功" : "失败"));
+        }
+        return executeCodeResponse;
     }
+
+    /**
+     * 获取错误响应
+     * 错误处理，提升程序健壮性（封装一个错误返回方法）
+     * @param e
+     * @return
+     */
+    private ExecuteCodeResponse getErrorResponce(Throwable e) {
+        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        executeCodeResponse.setOutputList(new ArrayList<>());
+        executeCodeResponse.setMessage(e.getMessage());
+        // TODO 设置ENUM ,表示代码沙箱错误
+        executeCodeResponse.setStatus(2);
+        executeCodeResponse.setJudgeInfo(new JudgeInfo());
+        return executeCodeResponse;
+    }
+
 }

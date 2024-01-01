@@ -2,9 +2,12 @@ package com.wl2o2o.smartojcodesandbox.utils;
 
 import cn.hutool.core.util.StrUtil;
 import com.wl2o2o.smartojcodesandbox.model.ExecuteMessage;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.StopWatch;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @Author <a href="https://github.com/wl2o2o">程序员CSGUIDER</a>
@@ -33,34 +36,34 @@ public class ProcessUtils {
                 System.out.println(opName + "成功！");
                 // 成块获取控制台输出
                 BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(runProcess.getInputStream()));
-                StringBuilder compileOutputStringBuilder = new StringBuilder();
+                List<String> outputStrList = new ArrayList<>();
                 String compileOutputLine;
                 // 逐行读取输出
                 while ((compileOutputLine = bufferedReader.readLine()) != null ) {
-                    compileOutputStringBuilder.append(compileOutputLine).append("\n");
+                    outputStrList.add(compileOutputLine);
                 }
-                executeMessage.setMessgae(compileOutputStringBuilder.toString());
+                executeMessage.setMessgae(StringUtils.join(outputStrList, "/n"));
             } else {
                 System.out.println(opName + "失败，错误码：" + exitValue);
                 // 分批成块获取进程的正常输出
                 BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(runProcess.getInputStream()));
-                StringBuilder compileOutputStringBuilder = new StringBuilder();
-                // 逐行读取
-                String runCompileOutputLine;
-                while ((runCompileOutputLine = bufferedReader.readLine()) != null){
-                    compileOutputStringBuilder.append(runCompileOutputLine).append("\n");
+                List<String> outputStrList = new ArrayList<>();
+                String compileOutputLine;
+                // 逐行读取输出
+                while ((compileOutputLine = bufferedReader.readLine()) != null ) {
+                    outputStrList.add(compileOutputLine);
                 }
-                executeMessage.setMessgae(compileOutputStringBuilder.toString());
+                executeMessage.setMessgae(StringUtils.join(outputStrList, "/n"));
 
                 // 分批成块获取进程的错误输出
                 BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(runProcess.getInputStream()));
-                StringBuilder errorCompileOutputStringBuilder = new StringBuilder();
+                List<String> errorOutputStrList = new ArrayList<>();
                 String errorCompileOutputLine;
                 // 逐行读取输出
                 while ((errorCompileOutputLine = errorBufferedReader.readLine()) != null ) {
-                    errorCompileOutputStringBuilder.append(errorCompileOutputLine).append("\n");
+                    errorOutputStrList.add(errorCompileOutputLine);
                 }
-                executeMessage.setErrorMessage(errorCompileOutputStringBuilder.toString());
+                executeMessage.setMessgae(StringUtils.join(errorOutputStrList, "/n"));
             }
             stopWatch.stop();
             executeMessage.setTime(stopWatch.getLastTaskTimeMillis());
